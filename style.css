@@ -1,0 +1,39 @@
+html, body {
+    height: 100%;
+    margin: 0;
+    overflow: hidden; /* Prevent scrollbars */
+}
+
+body {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    background-color: #202020;
+    color: white;
+    font-family: 'Courier New', Courier, monospace;
+}
+
+h1 {
+    flex-shrink: 0; /* Prevent h1 from shrinking */
+    margin: 10px 0;
+}
+
+#statusBar {
+    flex-shrink: 0;
+    width: 90vw; /* Take 90% of viewport width */
+    max-width: 800px; /* But not too large */
+    padding: 5px 0;
+    margin-bottom: 10px;
+    font-size: 20px;
+    text-align: left;
+    border-bottom: 2px solid #fff;
+}
+
+canvas {
+    border: 2px solid #fff;
+    background-color: #000;
+    max-width: 95vw;
+    max-height: 80vh;
+    object-fit: contain;
+}
