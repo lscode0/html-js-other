@@ -1,6 +1,6 @@
 // Service worker: aplikacja i biblioteka WebLLM działają offline.
 // Wagi modeli cache'uje sam WebLLM (Cache API), więc ich tu nie dotykamy.
-const CACHE = "lokalny-ai-v4";
+const CACHE = "lokalny-ai-v5";
 const SHELL = ["./", "index.html", "app.js", "manifest.webmanifest", "icon-180.png", "icon-192.png", "icon-512.png"];
 const CDN = /^https:\/\/(esm\.run|cdn\.jsdelivr\.net)\//;
 

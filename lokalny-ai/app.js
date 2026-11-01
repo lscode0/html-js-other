@@ -23,6 +23,8 @@ const MODELS = [
 // skonwertowane do MLC q4f16_1 tą samą architekturą co `lib`.
 const appConfig = {
   ...webllm.prebuiltAppConfig,
+  // Safari: Cache API (cache.add) potrafi odrzucić odpowiedź z HF jako "Response is not OK" — IndexedDB pobiera przez fetch().
+  cacheBackend: "indexeddb",
   model_list: [
     ...webllm.prebuiltAppConfig.model_list,
     ...MODELS.filter((m) => m.model).map((m) => ({
