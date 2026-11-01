@@ -129,10 +129,40 @@ function setBusy(b) {
 // ---------- silnik ----------
 function webgpuOK() { return !!navigator.gpu; }
 
-async function ensureModel(id = state.selectedId) {
-  if (state.engine && state.loadedId === id) return state.engine;
+let gpuInfo = null;
+async function probeGPU() {
+  if (gpuInfo) return gpuInfo;
   if (!webgpuOK()) throw new Error("Brak WebGPU. Wymagany iOS 26+ i Safari (albo PWA z ekranu początkowego).");
-  const m = MODELS.find((x) => x.id === id);
+  const adapter = await navigator.gpu.requestAdapter();
+  if (!adapter) throw new Error("Safari nie dał dostępu do GPU (requestAdapter = null). Zamknij inne karty i spróbuj ponownie.");
+  gpuInfo = {
+    f16: adapter.features.has("shader-f16"),
+    maxBuf: adapter.limits.maxStorageBufferBindingSize,
+  };
+  return gpuInfo;
+}
+
+// iPhone'y bez shader-f16 nie uruchomią wariantów q4f16 — przełącz na q4f32 (ok. 30% więcej RAM).
+function resolveId(id, gpu) {
+  if (gpu.f16 || !id.includes("q4f16_1")) return id;
+  const alt = id.replace("q4f16_1", "q4f32_1");
+  if (appConfig.model_list.some((r) => r.model_id === alt)) return alt;
+  throw new Error("Ten model wymaga shader-f16, którego Twój GPU nie obsługuje. Wybierz Llama 3.2 1B albo SmolLM2.");
+}
+
+function explain(e) {
+  const msg = String(e?.message || e);
+  if (/quota|QuotaExceeded|storage/i.test(msg)) return "Brak miejsca na model w Safari. Usuń inne pobrane modele (⚙︎ → Usuń z dysku) albo zwolnij miejsce na iPhonie. [" + msg + "]";
+  if (/device.*lost|out of memory|OOM|allocation/i.test(msg)) return "Model nie mieści się w pamięci GPU. Wybierz mniejszy (1B). [" + msg + "]";
+  if (/fetch|network|Failed to load|NetworkError|404/i.test(msg)) return "Nie udało się pobrać plików modelu. Sprawdź internet; jeśli to model społeczności, repo może być niekompatybilne. [" + msg + "]";
+  return msg;
+}
+
+async function ensureModel(wanted = state.selectedId) {
+  const gpu = await probeGPU();
+  const id = resolveId(wanted, gpu);
+  if (state.engine && state.loadedId === id) return state.engine;
+  const m = MODELS.find((x) => x.id === wanted);
   setStatus("ładowanie " + (m?.name || id), "busy");
   setProgress("Przygotowanie…", 0);
   const cb = (r) => {
@@ -147,12 +177,13 @@ async function ensureModel(id = state.selectedId) {
       await state.engine.reload(id);
     }
     state.loadedId = id;
-    setStatus((m?.name || id) + " · gotowy", "on");
+    setStatus((m?.name || id) + (id !== wanted ? " (f32)" : "") + " · gotowy", "on");
     return state.engine;
   } catch (e) {
+    console.error(e);
     state.loadedId = null;
     setStatus("błąd ładowania", "");
-    throw e;
+    throw new Error(explain(e));
   } finally {
     setProgress(null);
   }
@@ -170,7 +201,7 @@ async function send(text) {
 
   try {
     const engine = await ensureModel();
-    const model = MODELS.find((x) => x.id === state.loadedId);
+    const model = MODELS.find((x) => x.id === state.selectedId);
     const msgs = [{ role: "system", content: state.sys }]
       .concat(state.history.slice(0, -1).filter((m) => !m.err).slice(-16) // ostatnie 16 wiadomości mieści się w 4k kontekstu
       .map((m) => ({ role: m.role, content: m.role === "assistant" ? splitThink(m.content).answer : m.content })));
@@ -231,7 +262,8 @@ async function renderModels() {
 function openSettings() {
   $("#thinking").checked = state.thinking;
   $("#sysPrompt").value = state.sys;
-  $("#gpuInfo").textContent = webgpuOK() ? "WebGPU: dostępne ✓" : "WebGPU: niedostępne ✗ — zaktualizuj iOS do 26+.";
+  $("#gpuInfo").textContent = webgpuOK() ? "WebGPU: dostępne ✓ — sprawdzam GPU…" : "WebGPU: niedostępne ✗ — zaktualizuj iOS do 26+.";
+  probeGPU().then((g) => { $("#gpuInfo").textContent = `WebGPU ✓ · shader-f16: ${g.f16 ? "tak" : "nie (modele w wersji f32)"} · max bufor: ${Math.round(g.maxBuf / 1048576)} MB`; }).catch((e) => { $("#gpuInfo").textContent = e.message; });
   renderModels();
   $("#settings").showModal();
 }
@@ -257,7 +289,7 @@ $("#unload").onclick = async () => {
 $("#deleteCache").onclick = async () => {
   const m = MODELS.find((x) => x.id === state.selectedId);
   if (!confirm(`Usunąć ${m?.name} z pamięci telefonu?`)) return;
-  if (state.loadedId === state.selectedId) { await state.engine.unload(); state.loadedId = null; setStatus("brak modelu", ""); }
+  if (state.loadedId && state.loadedId.replace("q4f32_1", "q4f16_1") === state.selectedId) { await state.engine.unload(); state.loadedId = null; setStatus("brak modelu", ""); }
   await webllm.deleteModelAllInfoInCache(state.selectedId, appConfig);
   renderModels();
 };
